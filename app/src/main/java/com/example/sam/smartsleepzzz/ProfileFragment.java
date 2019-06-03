@@ -4,23 +4,20 @@ import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.TimePicker;
 
 
 /**
  * A simple {@link Fragment} subclass.
  * Activities that contain this fragment must implement the
- * {@link TimeFragment.OnFragmentInteractionListener} interface
+ * {@link ProfileFragment.OnFragmentInteractionListener} interface
  * to handle interaction events.
- * Use the {@link TimeFragment#newInstance} factory method to
+ * Use the {@link ProfileFragment#newInstance} factory method to
  * create an instance of this fragment.
  */
-public class TimeFragment extends Fragment {
+public class ProfileFragment extends Fragment {
     // TODO: Rename parameter arguments, choose names that match
     // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
     private static final String ARG_PARAM1 = "param1";
@@ -32,7 +29,7 @@ public class TimeFragment extends Fragment {
 
     private OnFragmentInteractionListener mListener;
 
-    public TimeFragment() {
+    public ProfileFragment() {
         // Required empty public constructor
     }
 
@@ -42,11 +39,11 @@ public class TimeFragment extends Fragment {
      *
      * @param param1 Parameter 1.
      * @param param2 Parameter 2.
-     * @return A new instance of fragment TimeFragment.
+     * @return A new instance of fragment ProfileFragment.
      */
     // TODO: Rename and change types and number of parameters
-    public static TimeFragment newInstance(String param1, String param2) {
-        TimeFragment fragment = new TimeFragment();
+    public static ProfileFragment newInstance(String param1, String param2) {
+        ProfileFragment fragment = new ProfileFragment();
         Bundle args = new Bundle();
         args.putString(ARG_PARAM1, param1);
         args.putString(ARG_PARAM2, param2);
@@ -67,18 +64,7 @@ public class TimeFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         // Inflate the layout for this fragment
-        View view = inflater.inflate(R.layout.fragment_time, container, false);
-
-        //Close fragment using close icon
-        Button close = (Button) view.findViewById(R.id.close_button);
-        close.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                closeFragment();
-            }
-        });
-
-        return view;
+        return inflater.inflate(R.layout.fragment_profile, container, false);
     }
 
     // TODO: Rename method, update argument and hook method into UI event
@@ -118,18 +104,5 @@ public class TimeFragment extends Fragment {
     public interface OnFragmentInteractionListener {
         // TODO: Update argument type and name
         void onFragmentInteraction(Uri uri);
-    }
-
-    private void closeFragment() {
-        TimePicker time = (TimePicker) getView().findViewById(R.id.timePicker);
-        Log.v("Hour", String.valueOf(time.getHour()));
-        Log.v("Minute", String.valueOf(time.getMinute()));
-
-//        if(mParam1.equals("startTime")){
-//            ((AlarmFragment) getActivity()).setStartTime(time.getHour(), time.getMinute());
-//        }else{
-//            ((AlarmFragment) getActivity()).setEndTime(time.getHour(), time.getMinute());
-//        }
-        getActivity().getSupportFragmentManager().beginTransaction().remove(this).commit();
     }
 }
