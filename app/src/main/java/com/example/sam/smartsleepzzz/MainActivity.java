@@ -1,5 +1,6 @@
 package com.example.sam.smartsleepzzz;
 
+import android.content.Intent;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.net.Uri;
@@ -8,15 +9,18 @@ import android.support.v4.app.FragmentPagerAdapter;
 import android.support.v4.view.ViewPager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
+import android.widget.Toast;
+
+
 
 public class MainActivity extends AppCompatActivity implements DataFragment.OnFragmentInteractionListener, AlarmFragment.OnFragmentInteractionListener, ProfileFragment.OnFragmentInteractionListener{
 
+    private static final String TAG = "tag";
     private int startHour;
     private int startMinute;
     private int endHour;
     private int endMinute;
-
-
 
 
     @Override

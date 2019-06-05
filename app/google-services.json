@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "62465173441",
+    "firebase_url": "https://senior-design-e42c5.firebaseio.com",
+    "project_id": "senior-design-e42c5",
+    "storage_bucket": "senior-design-e42c5.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:62465173441:android:e57a84b6992715a3",
+        "android_client_info": {
+          "package_name": "com.example.sam.smartsleepzzz"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "62465173441-vq8mddrlj1nvaft0h83m0h4mk9hgqcub.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBNDH1M5xBbf3zPMk7xNO06UWLzqthqjyY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "62465173441-vq8mddrlj1nvaft0h83m0h4mk9hgqcub.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
