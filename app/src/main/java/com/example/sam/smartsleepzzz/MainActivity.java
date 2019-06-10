@@ -12,6 +12,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.Toast;
 
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
 
 
 public class MainActivity extends AppCompatActivity implements DataFragment.OnFragmentInteractionListener, AlarmFragment.OnFragmentInteractionListener, ProfileFragment.OnFragmentInteractionListener{
@@ -22,11 +24,31 @@ public class MainActivity extends AppCompatActivity implements DataFragment.OnFr
     private int endHour;
     private int endMinute;
 
+    private String name;
+    private String email;
+    private Uri photoUrl;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user != null) {
+            // Name, email address, and profile photo Url
+            name = user.getDisplayName();
+            email = user.getEmail();
+            photoUrl = user.getPhotoUrl();
+
+            // Check if user's email is verified
+            boolean emailVerified = user.isEmailVerified();
+
+            // The user's ID, unique to the Firebase project. Do NOT use this value to
+            // authenticate with your backend server, if you have one. Use
+            // FirebaseUser.getToken() instead.
+            String uid = user.getUid();
+        }
 
         TabLayout tabLayout = (TabLayout) findViewById(R.id.tabLayout);
         ViewPager viewPager = (ViewPager) findViewById(R.id.viewPager);
@@ -47,7 +69,12 @@ public class MainActivity extends AppCompatActivity implements DataFragment.OnFr
                 case 0:
                     return new AlarmFragment();
                 case 1:
-                    return new ProfileFragment();
+                    Bundle bundle = new Bundle();
+                    bundle.putString("name",name);
+                    bundle.putString("email", email);
+                    ProfileFragment profileFrag = new ProfileFragment();
+                    profileFrag.setArguments(bundle);
+                    return profileFrag;
                 case 2:
                     return new DataFragment();
                 default:

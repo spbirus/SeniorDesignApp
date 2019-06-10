@@ -12,11 +12,6 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Profile" />
-
         <QuickContactBadge
             android:id="@+id/quickContactBadge"
             android:layout_width="match_parent"
@@ -36,6 +31,29 @@
             android:layout_height="wrap_content"
             android:text="Email"
             android:textAlignment="center" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="bottom"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/nameChange"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ems="10"
+                android:inputType="textPersonName"
+                android:text="New Name" />
+
+            <Button
+                android:id="@+id/nameChangeButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Change Name" />
+        </LinearLayout>
 
     </LinearLayout>
 
