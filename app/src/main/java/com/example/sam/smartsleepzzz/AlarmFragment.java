@@ -1,16 +1,28 @@
 package com.example.sam.smartsleepzzz;
 
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentTransaction;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
+
+import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.auth.UserProfileChangeRequest;
 
 
 /**
@@ -35,6 +47,14 @@ public class AlarmFragment extends Fragment implements TimeFragment.OnFragmentIn
     // TODO: Rename and change types of parameters
     private String mParam1;
     private String mParam2;
+
+//    private BluetoothAdapter bluetoothAdapter;
+//    private boolean mScanning;
+//    private Handler handler;
+//
+//    // Stops scanning after 10 seconds.
+//    private static final long SCAN_PERIOD = 10000;
+    private boolean enable = false;
 
     private OnFragmentInteractionListener mListener;
 
@@ -63,6 +83,7 @@ public class AlarmFragment extends Fragment implements TimeFragment.OnFragmentIn
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
         if (getArguments() != null) {
             mParam1 = getArguments().getString(ARG_PARAM1);
             mParam2 = getArguments().getString(ARG_PARAM2);
@@ -73,7 +94,17 @@ public class AlarmFragment extends Fragment implements TimeFragment.OnFragmentIn
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         // Inflate the layout for this fragment
-        return inflater.inflate(R.layout.fragment_alarm, container, false);
+        View rootView = inflater.inflate(R.layout.fragment_alarm, container, false);
+
+        Button btn = (Button) rootView.findViewById(R.id.bluetoothButton);
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                enable = !enable;
+            }
+        });
+
+        return rootView;
     }
 
     // TODO: Rename method, update argument and hook method into UI event
