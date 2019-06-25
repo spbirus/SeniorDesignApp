@@ -1,9 +1,15 @@
 package com.example.sam.smartsleepzzz;
 
+import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothGattService;
 import android.content.Intent;
+import android.os.Handler;
 import android.os.SystemClock;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.net.Uri;
@@ -13,18 +19,21 @@ import android.support.v4.view.ViewPager;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.UUID;
 
 
-public class MainActivity extends AppCompatActivity implements DataFragment.OnFragmentInteractionListener, AlarmFragment.OnFragmentInteractionListener, ProfileFragment.OnFragmentInteractionListener{
+public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "tag";
     private int startHour;
@@ -51,11 +60,20 @@ public class MainActivity extends AppCompatActivity implements DataFragment.OnFr
     private long mLastUpdateMillis;
     private final static long kMinDelayToUpdateUI = 200;    // in milliseconds
 
+    private BluetoothDevice heartRateDevice;
+
+    //data receiving stuff
+    private volatile ArrayList<UartDataChunk> mDataBuffer;
+    private volatile int mReceivedBytes;
+    private boolean mShowDataInHexFormat;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        mBleManager = BleManager.getInstance(this);
 
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user != null) {
@@ -72,61 +90,23 @@ public class MainActivity extends AppCompatActivity implements DataFragment.OnFr
             // FirebaseUser.getToken() instead.
             String uid = user.getUid();
         }
-
-        TabLayout tabLayout = (TabLayout) findViewById(R.id.tabLayout);
-        ViewPager viewPager = (ViewPager) findViewById(R.id.viewPager);
-
-        viewPager.setAdapter(new SectionPagerAdapter(getSupportFragmentManager()));
-        tabLayout.setupWithViewPager(viewPager);
     }
 
-    public class SectionPagerAdapter extends FragmentPagerAdapter {
-
-        public SectionPagerAdapter(FragmentManager fm) {
-            super(fm);
-        }
-
-        @Override
-        public Fragment getItem(int position) {
-            switch (position) {
-                case 0:
-                    return new AlarmFragment();
-                case 1:
-                    Bundle bundle = new Bundle();
-                    bundle.putString("name",name);
-                    bundle.putString("email", email);
-                    ProfileFragment profileFrag = new ProfileFragment();
-                    profileFrag.setArguments(bundle);
-                    return profileFrag;
-                case 2:
-                    return new DataFragment();
-                default:
-                    return new AlarmFragment();
-            }
-        }
-
-        @Override
-        public int getCount() {
-            return 3;
-        }
-
-        @Override
-        public CharSequence getPageTitle(int position) {
-            switch (position) {
-                case 0:
-                    return "Alarm";
-                case 1:
-                    return "Profile";
-                case 2:
-                    return "Data";
-                default:
-                    return "Alarm";
-            }
-        }
+    public void onProfileClick(View view){
+        Intent myIntent = new Intent(this, ProfileActivity.class);
+        myIntent.putExtra("name", name); //Optional parameters
+        myIntent.putExtra("email", email);
+        startActivity(myIntent);
     }
 
-    @Override
-    public void onFragmentInteraction(Uri uri){
+    public void onConnectClick(View view){
+        ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 1001);
+        boolean isScanning = mScanner != null && mScanner.isScanning();
+        if (isScanning) {
+            stopScanning();
+        } else {
+            startScan(null);
+        }
 
     }
 
@@ -191,6 +171,15 @@ public class MainActivity extends AppCompatActivity implements DataFragment.OnFr
                         mLastUpdateMillis = currentMillis;
 
                         Log.v("scanned devices",  mScannedDevices.toString());
+                        for(BluetoothDeviceData d : mScannedDevices){
+                            if(d != null && d.advertisedName != null && d.advertisedName.equals("Adafruit Bluefruit LE")){
+                                stopScanning();
+                                Log.v("Found device", "device found");
+                                Toast.makeText(MainActivity.this, "found device", Toast.LENGTH_LONG);
+                                heartRateDevice = d.device;
+                                connect(heartRateDevice);
+                            }
+                        }
 //                        runOnUiThread(new Runnable() {
 //                            @Override
 //                            public void run() {
@@ -208,6 +197,18 @@ public class MainActivity extends AppCompatActivity implements DataFragment.OnFr
 
         // Update UI
         Toast.makeText(this, "Scanning for bluetooth", Toast.LENGTH_LONG);
+    }
+
+    private void connect(BluetoothDevice device) {
+        boolean isConnecting = mBleManager.connect(this, device.getAddress());
+        TextView d_name = (TextView) findViewById(R.id.deviceName);
+        TextView d_connection = (TextView) findViewById(R.id.deviceConnected);
+
+        d_name.setText(heartRateDevice.getName());
+        d_connection.setText("Connected!");
+        if (isConnecting) {
+//            showConnectionStatus(true);
+        }
     }
 
     private void decodeScanRecords(BluetoothDeviceData deviceData) {
@@ -379,6 +380,200 @@ public class MainActivity extends AppCompatActivity implements DataFragment.OnFr
         }
     }
     //endregion
+
+
+    // receiving data stuff
+    public static class UartInterfaceActivity extends AppCompatActivity implements BleManager.BleManagerListener {
+        // Log
+        private final String TAG = UartInterfaceActivity.class.getSimpleName();
+
+        // Service Constants
+        public static final String UUID_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+        public static final String UUID_RX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+        public static final String UUID_TX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+        public static final String UUID_DFU = "00001530-1212-EFDE-1523-785FEABCD123";
+        public static final int kTxMaxCharacters = 20;
+
+        // Data
+        protected BleManager mBleManager;
+        protected BluetoothGattService mUartService;
+        private boolean isRxNotificationEnabled = false;
+
+
+        // region Send Data to UART
+        protected void sendData(String text) {
+            final byte[] value = text.getBytes(Charset.forName("UTF-8"));
+            sendData(value);
+        }
+
+        protected void sendData(byte[] data) {
+            if (mUartService != null) {
+                // Split the value into chunks (UART service has a maximum number of characters that can be written )
+                for (int i = 0; i < data.length; i += kTxMaxCharacters) {
+                    final byte[] chunk = Arrays.copyOfRange(data, i, Math.min(i + kTxMaxCharacters, data.length));
+                    mBleManager.writeService(mUartService, UUID_TX, chunk);
+                }
+            } else {
+                Log.w(TAG, "Uart Service not discovered. Unable to send data");
+            }
+        }
+
+        // Send data to UART and add a byte with a custom CRC
+        protected void sendDataWithCRC(byte[] data) {
+
+            // Calculate checksum
+            byte checksum = 0;
+            for (byte aData : data) {
+                checksum += aData;
+            }
+            checksum = (byte) (~checksum);       // Invert
+
+            // Add crc to data
+            byte dataCrc[] = new byte[data.length + 1];
+            System.arraycopy(data, 0, dataCrc, 0, data.length);
+            dataCrc[data.length] = checksum;
+
+            // Send it
+            Log.d(TAG, "Send to UART: " + BleUtils.bytesToHexWithSpaces(dataCrc));
+            sendData(dataCrc);
+        }
+        // endregion
+
+        // region SendDataWithCompletionHandler
+        protected interface SendDataCompletionHandler {
+            void sendDataResponse(String data);
+        }
+
+        final private Handler sendDataTimeoutHandler = new Handler();
+        private Runnable sendDataRunnable = null;
+        private SendDataCompletionHandler sendDataCompletionHandler = null;
+
+        protected void sendData(byte[] data, SendDataCompletionHandler completionHandler) {
+
+            if (completionHandler == null) {
+                sendData(data);
+                return;
+            }
+
+            if (!isRxNotificationEnabled) {
+                Log.w(TAG, "sendData warning: RX notification not enabled. completionHandler will not be executed");
+            }
+
+            if (sendDataRunnable != null || sendDataCompletionHandler != null) {
+                Log.d(TAG, "sendData error: waiting for a previous response");
+                return;
+            }
+
+            Log.d(TAG, "sendData");
+            sendDataCompletionHandler = completionHandler;
+            sendDataRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    Log.d(TAG, "sendData timeout");
+                    final SendDataCompletionHandler dataCompletionHandler = sendDataCompletionHandler;
+
+                    UartInterfaceActivity.this.sendDataRunnable = null;
+                    UartInterfaceActivity.this.sendDataCompletionHandler = null;
+
+                    dataCompletionHandler.sendDataResponse(null);
+                }
+            };
+
+            sendDataTimeoutHandler.postDelayed(sendDataRunnable, 2 * 1000);
+            sendData(data);
+
+        }
+
+        protected boolean isWaitingForSendDataResponse() {
+            return sendDataRunnable != null;
+        }
+
+        // endregion
+
+        // region BleManagerListener  (used to implement sendData with completionHandler)
+
+        @Override
+        public void onConnected() {
+
+        }
+
+        @Override
+        public void onConnecting() {
+
+        }
+
+        @Override
+        public void onDisconnected() {
+
+        }
+
+        @Override
+        public void onServicesDiscovered() {
+            mUartService = mBleManager.getGattService(UUID_SERVICE);
+        }
+
+        protected void enableRxNotifications() {
+            isRxNotificationEnabled = true;
+            mBleManager.enableNotification(mUartService, UUID_RX, true);
+        }
+
+        @Override
+        public void onDataAvailable(BluetoothGattCharacteristic characteristic) {
+            // Check if there is a pending sendDataRunnable
+            if (sendDataRunnable != null) {
+                if (characteristic.getService().getUuid().toString().equalsIgnoreCase(UUID_SERVICE)) {
+                    if (characteristic.getUuid().toString().equalsIgnoreCase(UUID_RX)) {
+
+                        Log.d(TAG, "sendData received data");
+                        sendDataTimeoutHandler.removeCallbacks(sendDataRunnable);
+                        sendDataRunnable = null;
+
+                        if (sendDataCompletionHandler != null) {
+                            final byte[] bytes = characteristic.getValue();
+                            final String data = new String(bytes, Charset.forName("UTF-8"));
+
+                            final SendDataCompletionHandler dataCompletionHandler = sendDataCompletionHandler;
+                            sendDataCompletionHandler = null;
+                            dataCompletionHandler.sendDataResponse(data);
+                        }
+                    }
+                }
+            }
+        }
+
+        @Override
+        public void onDataAvailable(BluetoothGattDescriptor descriptor) {
+
+        }
+
+        @Override
+        public void onReadRemoteRssi(int rssi) {
+
+        }
+
+        // endregion
+    }
+
+
+    public synchronized void onDataAvailable(BluetoothGattCharacteristic characteristic) {
+        UartInterfaceActivity uart = new UartInterfaceActivity();
+        uart.onDataAvailable(characteristic);
+        // UART RX
+        if (characteristic.getService().getUuid().toString().equalsIgnoreCase("6e400001-b5a3-f393-e0a9-e50e24dcca9e")) {
+            if (characteristic.getUuid().toString().equalsIgnoreCase("6e400003-b5a3-f393-e0a9-e50e24dcca9e")) {
+                final byte[] bytes = characteristic.getValue();
+                mReceivedBytes += bytes.length;
+
+                final UartDataChunk dataChunk = new UartDataChunk(System.currentTimeMillis(), UartDataChunk.TRANSFERMODE_RX, bytes);
+                mDataBuffer.add(dataChunk);
+
+                final String formattedData = mShowDataInHexFormat ? BleUtils.bytesToHex2(bytes) : BleUtils.bytesToText(bytes, true);
+
+                Log.v("data from uart ", formattedData);
+            }
+        }
+    }
+
 
 
 }
