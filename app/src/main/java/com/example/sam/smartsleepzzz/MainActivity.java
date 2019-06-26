@@ -554,7 +554,6 @@ public class MainActivity extends AppCompatActivity {
         // endregion
     }
 
-
     public synchronized void onDataAvailable(BluetoothGattCharacteristic characteristic) {
         UartInterfaceActivity uart = new UartInterfaceActivity();
         uart.onDataAvailable(characteristic);
