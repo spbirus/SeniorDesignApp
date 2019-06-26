@@ -80,7 +80,7 @@ public class AlarmFragment extends Fragment implements TimeFragment.OnFragmentIn
         btn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ((MainActivity)getActivity()).startScan(null);
+//                ((MainActivity)getActivity()).startScan(null);
             }
         });
 

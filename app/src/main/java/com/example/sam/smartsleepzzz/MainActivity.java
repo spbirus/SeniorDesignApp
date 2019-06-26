@@ -3,9 +3,16 @@ package com.example.sam.smartsleepzzz;
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
 import android.content.Intent;
 import android.os.Handler;
 import android.os.SystemClock;
@@ -30,6 +37,7 @@ import java.io.UnsupportedEncodingException;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 
@@ -46,26 +54,41 @@ public class MainActivity extends AppCompatActivity {
     private Uri photoUrl;
 
 
-    // Data
-    private BleManager mBleManager;
-    private boolean mIsScanPaused = true;
-    private BleDevicesScanner mScanner;
+//    // Data
+//    private BleManager mBleManager;
+//    private boolean mIsScanPaused = true;
+//    private BleDevicesScanner mScanner;
+//
+//    private ArrayList<BluetoothDeviceData> mScannedDevices;
+//    private BluetoothDeviceData mSelectedDeviceData;
+//    private Class<?> mComponentToStartWhenConnected;
+//    private boolean mShouldEnableWifiOnQuit = false;
+//    private String mLatestCheckedDeviceAddress;
+//
+//    private long mLastUpdateMillis;
+//    private final static long kMinDelayToUpdateUI = 200;    // in milliseconds
+//
+//    private BluetoothDevice heartRateDevice;
+//
+//    //data receiving stuff
+//    private volatile ArrayList<UartDataChunk> mDataBuffer;
+//    private volatile int mReceivedBytes;
+//    private boolean mShowDataInHexFormat;
 
-    private ArrayList<BluetoothDeviceData> mScannedDevices;
-    private BluetoothDeviceData mSelectedDeviceData;
-    private Class<?> mComponentToStartWhenConnected;
-    private boolean mShouldEnableWifiOnQuit = false;
-    private String mLatestCheckedDeviceAddress;
+    // Bluetooth's variables
+    BluetoothAdapter bluetoothAdapter;
+    BluetoothLeScanner bluetoothLeScanner;
+    BluetoothManager bluetoothManager;
+    BluetoothScanCallback bluetoothScanCallback;
+    BluetoothGatt gattClient;
 
-    private long mLastUpdateMillis;
-    private final static long kMinDelayToUpdateUI = 200;    // in milliseconds
+    BluetoothGattCharacteristic characteristicID; // To get Value
 
-    private BluetoothDevice heartRateDevice;
+    // UUID's (set yours)
+    final UUID SERVICE_UUID = UUID.fromString("ab0828b1-198e-4351-b779-901fa0e0371e");
+    final UUID CHARACTERISTIC_UUID_ID = UUID.fromString("1a220d0a-6b06-4767-8692-243153d94d85");
+    final UUID DESCRIPTOR_UUID_ID = UUID.fromString("ec6e1003-884b-4a1c-850f-1cfce9cf6567");
 
-    //data receiving stuff
-    private volatile ArrayList<UartDataChunk> mDataBuffer;
-    private volatile int mReceivedBytes;
-    private boolean mShowDataInHexFormat;
 
 
     @Override
@@ -73,7 +96,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        mBleManager = BleManager.getInstance(this);
+//        mBleManager = BleManager.getInstance(this);
 
         FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
         if (user != null) {
@@ -89,6 +112,10 @@ public class MainActivity extends AppCompatActivity {
             // authenticate with your backend server, if you have one. Use
             // FirebaseUser.getToken() instead.
             String uid = user.getUid();
+
+            // Bluetooth
+            bluetoothManager = (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
+            bluetoothAdapter = bluetoothManager.getAdapter();
         }
     }
 
@@ -101,479 +128,133 @@ public class MainActivity extends AppCompatActivity {
 
     public void onConnectClick(View view){
         ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, 1001);
-        boolean isScanning = mScanner != null && mScanner.isScanning();
-        if (isScanning) {
-            stopScanning();
-        } else {
-            startScan(null);
-        }
+//        boolean isScanning = mScanner != null && mScanner.isScanning();
+//        if (isScanning) {
+//            stopScanning();
+//        } else {
+            startScan();
+//        }
 
     }
 
-    private void stopScanning() {
-        // Stop scanning
-        if (mScanner != null) {
-            mScanner.stop();
-            mScanner = null;
-        }
+    // BLUETOOTH SCAN
 
-        Toast.makeText(this, "Stopped scan", Toast.LENGTH_LONG);
+    private void startScan(){
+        Log.i(TAG,"startScan()");
+        bluetoothScanCallback = new BluetoothScanCallback();
+        bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
+        bluetoothLeScanner.startScan(bluetoothScanCallback);
     }
 
-    // region Scan
-    public void startScan(final UUID[] servicesToScan) {
-        Log.d(TAG, "startScan");
+    // BLUETOOTH CONNECTION
+    private void connectDevice(BluetoothDevice device) {
+        if (device == null) Log.i(TAG,"Device is null");
+        GattClientCallback gattClientCallback = new GattClientCallback();
+        gattClient = device.connectGatt(this,false,gattClientCallback);
+    }
 
-        // Stop current scanning (if needed)
-        stopScanning();
+    // BLE Scan Callbacks
+    private class BluetoothScanCallback extends ScanCallback {
 
-        // Configure scanning
-        BluetoothAdapter bluetoothAdapter = BleUtils.getBluetoothAdapter(getApplicationContext());
-        if (BleUtils.getBleStatus(this) != BleUtils.STATUS_BLE_ENABLED) {
-            Log.w(TAG, "startScan: BluetoothAdapter not initialized or unspecified address.");
-        } else {
-            mScanner = new BleDevicesScanner(bluetoothAdapter, servicesToScan, new BluetoothAdapter.LeScanCallback() {
-                @Override
-                public void onLeScan(final BluetoothDevice device, final int rssi, byte[] scanRecord) {
-                    //final String deviceName = device.getName();
-                    //Log.d(TAG, "Discovered device: " + (deviceName != null ? deviceName : "<unknown>"));
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) {
+            Log.i(TAG, "onScanResult");
+            if (result.getDevice().getName() != null){
+                if (result.getDevice().getName().equals("Adafruit Bluefruit LE")) {
+                    // When find your device, connect.
+                    connectDevice(result.getDevice());
+                    TextView d_name = (TextView) findViewById(R.id.deviceName);
+                    TextView d_connection = (TextView) findViewById(R.id.deviceConnected);
 
-                    BluetoothDeviceData previouslyScannedDeviceData = null;
-                    if (mScannedDevices == null) {
-                        mScannedDevices = new ArrayList<>();       // Safeguard
-                    }
-
-                    // Check that the device was not previously found
-                    for (BluetoothDeviceData deviceData : mScannedDevices) {
-                        if (deviceData.device.getAddress().equals(device.getAddress())) {
-                            previouslyScannedDeviceData = deviceData;
-                            break;
-                        }
-                    }
-
-                    BluetoothDeviceData deviceData;
-                    if (previouslyScannedDeviceData == null) {
-                        // Add it to the mScannedDevice list
-                        deviceData = new BluetoothDeviceData();
-                        mScannedDevices.add(deviceData);
-                    } else {
-                        deviceData = previouslyScannedDeviceData;
-                    }
-
-                    deviceData.device = device;
-                    deviceData.rssi = rssi;
-                    deviceData.scanRecord = scanRecord;
-                    decodeScanRecords(deviceData);
-
-                    // Update device data
-                    long currentMillis = SystemClock.uptimeMillis();
-                    if (previouslyScannedDeviceData == null || currentMillis - mLastUpdateMillis > kMinDelayToUpdateUI) {          // Avoid updating when not a new device has been found and the time from the last update is really short to avoid updating UI so fast that it will become unresponsive
-                        mLastUpdateMillis = currentMillis;
-
-                        Log.v("scanned devices",  mScannedDevices.toString());
-                        for(BluetoothDeviceData d : mScannedDevices){
-                            if(d != null && d.advertisedName != null && d.advertisedName.equals("Adafruit Bluefruit LE")){
-                                stopScanning();
-                                Log.v("Found device", "device found");
-                                Toast.makeText(MainActivity.this, "found device", Toast.LENGTH_LONG);
-                                heartRateDevice = d.device;
-                                connect(heartRateDevice);
-                            }
-                        }
-//                        runOnUiThread(new Runnable() {
-//                            @Override
-//                            public void run() {
-//                                updateUI();
-//                            }
-//                        });
-                    }
-
+                    d_name.setText(result.getDevice().getName());
+                    d_connection.setText("Connected!");
+                    bluetoothLeScanner.stopScan(bluetoothScanCallback); // stop scan
                 }
-            });
-
-            // Start scanning
-            mScanner.start();
+            }
         }
 
-        // Update UI
-        Toast.makeText(this, "Scanning for bluetooth", Toast.LENGTH_LONG);
-    }
+        @Override
+        public void onBatchScanResults(List<ScanResult> results) {
+            Log.i(TAG, "onBathScanResults");
+        }
 
-    private void connect(BluetoothDevice device) {
-        boolean isConnecting = mBleManager.connect(this, device.getAddress());
-        TextView d_name = (TextView) findViewById(R.id.deviceName);
-        TextView d_connection = (TextView) findViewById(R.id.deviceConnected);
-
-        d_name.setText(heartRateDevice.getName());
-        d_connection.setText("Connected!");
-        if (isConnecting) {
-//            showConnectionStatus(true);
+        @Override
+        public void onScanFailed(int errorCode) {
+            Log.i(TAG, "ErrorCode: " + errorCode);
         }
     }
 
-    private void decodeScanRecords(BluetoothDeviceData deviceData) {
-        // based on http://stackoverflow.com/questions/24003777/read-advertisement-packet-in-android
-        final byte[] scanRecord = deviceData.scanRecord;
+    // Bluetooth GATT Client Callback
+    private class GattClientCallback extends BluetoothGattCallback {
+        @Override
+        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+            super.onConnectionStateChange(gatt, status, newState);
+            Log.i(TAG,"onConnectionStateChange");
 
-        ArrayList<UUID> uuids = new ArrayList<>();
-        byte[] advertisedData = Arrays.copyOf(scanRecord, scanRecord.length);
-        int offset = 0;
-        deviceData.type = BluetoothDeviceData.kType_Unknown;
-
-        // Check if is an iBeacon ( 0x02, 0x0x1, a flag byte, 0x1A, 0xFF, manufacturer (2bytes), 0x02, 0x15)
-        final boolean isBeacon = advertisedData[0] == 0x02 && advertisedData[1] == 0x01 && advertisedData[3] == 0x1A && advertisedData[4] == (byte) 0xFF && advertisedData[7] == 0x02 && advertisedData[8] == 0x15;
-
-        // Check if is an URIBeacon
-        final byte[] kUriBeaconPrefix = {0x03, 0x03, (byte) 0xD8, (byte) 0xFE};
-        final boolean isUriBeacon = Arrays.equals(Arrays.copyOf(scanRecord, kUriBeaconPrefix.length), kUriBeaconPrefix) && advertisedData[5] == 0x16 && advertisedData[6] == kUriBeaconPrefix[2] && advertisedData[7] == kUriBeaconPrefix[3];
-
-        if (isBeacon) {
-            deviceData.type = BluetoothDeviceData.kType_Beacon;
-
-            // Read uuid
-            offset = 9;
-            UUID uuid = BleUtils.getUuidFromByteArrayBigEndian(Arrays.copyOfRange(scanRecord, offset, offset + 16));
-            uuids.add(uuid);
-            offset += 16;
-
-            // Skip major minor
-            offset += 2 * 2;   // major, minor
-
-            // Read txpower
-            final int txPower = advertisedData[offset++];
-            deviceData.txPower = txPower;
-        } else if (isUriBeacon) {
-            deviceData.type = BluetoothDeviceData.kType_UriBeacon;
-
-            // Read txpower
-            final int txPower = advertisedData[9];
-            deviceData.txPower = txPower;
-        } else {
-            // Read standard advertising packet
-            while (offset < advertisedData.length - 2) {
-                // Length
-                int len = advertisedData[offset++];
-                if (len == 0) break;
-
-                // Type
-                int type = advertisedData[offset++];
-                if (type == 0) break;
-
-                // Data
-//            Log.d(TAG, "record -> lenght: " + length + " type:" + type + " data" + data);
-
-                switch (type) {
-                    case 0x02:          // Partial list of 16-bit UUIDs
-                    case 0x03: {        // Complete list of 16-bit UUIDs
-                        while (len > 1) {
-                            int uuid16 = advertisedData[offset++] & 0xFF;
-                            uuid16 |= (advertisedData[offset++] << 8);
-                            len -= 2;
-                            uuids.add(UUID.fromString(String.format("%08x-0000-1000-8000-00805f9b34fb", uuid16)));
-                        }
-                        break;
-                    }
-
-                    case 0x06:          // Partial list of 128-bit UUIDs
-                    case 0x07: {        // Complete list of 128-bit UUIDs
-                        while (len >= 16) {
-                            try {
-                                // Wrap the advertised bits and order them.
-                                UUID uuid = BleUtils.getUuidFromByteArraLittleEndian(Arrays.copyOfRange(advertisedData, offset, offset + 16));
-                                uuids.add(uuid);
-
-                            } catch (IndexOutOfBoundsException e) {
-                                Log.e(TAG, "BlueToothDeviceFilter.parseUUID: " + e.toString());
-                            } finally {
-                                // Move the offset to read the next uuid.
-                                offset += 16;
-                                len -= 16;
-                            }
-                        }
-                        break;
-                    }
-
-                    case 0x09: {
-                        byte[] nameBytes = new byte[len - 1];
-                        for (int i = 0; i < len - 1; i++) {
-                            nameBytes[i] = advertisedData[offset++];
-                        }
-
-                        String name = null;
-                        try {
-                            name = new String(nameBytes, "utf-8");
-                        } catch (UnsupportedEncodingException e) {
-                            e.printStackTrace();
-                        }
-                        deviceData.advertisedName = name;
-                        break;
-                    }
-
-                    case 0x0A: {        // TX Power
-                        final int txPower = advertisedData[offset++];
-                        deviceData.txPower = txPower;
-                        break;
-                    }
-
-                    default: {
-                        offset += (len - 1);
-                        break;
-                    }
-                }
-            }
-
-            // Check if Uart is contained in the uuids
-            boolean isUart = false;
-            for (UUID uuid : uuids) {
-                if (uuid.toString().equalsIgnoreCase("6e400001-b5a3-f393-e0a9-e50e24dcca9e")) {
-                    isUart = true;
-                    break;
-                }
-            }
-            if (isUart) {
-                deviceData.type = BluetoothDeviceData.kType_Uart;
-            }
-        }
-
-        deviceData.uuids = uuids;
-    }
-
-    // region Helpers
-    private class BluetoothDeviceData {
-        BluetoothDevice device;
-        public int rssi;
-        byte[] scanRecord;
-        private String advertisedName;           // Advertised name
-        private String cachedNiceName;
-        private String cachedName;
-
-        // Decoded scan record (update R.array.scan_devicetypes if this list is modified)
-        static final int kType_Unknown = 0;
-        static final int kType_Uart = 1;
-        static final int kType_Beacon = 2;
-        static final int kType_UriBeacon = 3;
-
-        public int type;
-        int txPower;
-        ArrayList<UUID> uuids;
-
-        String getName() {
-            if (cachedName == null) {
-                cachedName = device.getName();
-                if (cachedName == null) {
-                    cachedName = advertisedName;      // Try to get a name (but it seems that if device.getName() is null, this is also null)
-                }
-            }
-
-            return cachedName;
-        }
-
-        String getNiceName() {
-            if (cachedNiceName == null) {
-                cachedNiceName = getName();
-                if (cachedNiceName == null) {
-                    cachedNiceName = device.getAddress();
-                }
-            }
-
-            return cachedNiceName;
-        }
-    }
-    //endregion
-
-
-    // receiving data stuff
-    public static class UartInterfaceActivity extends AppCompatActivity implements BleManager.BleManagerListener {
-        // Log
-        private final String TAG = UartInterfaceActivity.class.getSimpleName();
-
-        // Service Constants
-        public static final String UUID_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-        public static final String UUID_RX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-        public static final String UUID_TX = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-        public static final String UUID_DFU = "00001530-1212-EFDE-1523-785FEABCD123";
-        public static final int kTxMaxCharacters = 20;
-
-        // Data
-        protected BleManager mBleManager;
-        protected BluetoothGattService mUartService;
-        private boolean isRxNotificationEnabled = false;
-
-
-        // region Send Data to UART
-        protected void sendData(String text) {
-            final byte[] value = text.getBytes(Charset.forName("UTF-8"));
-            sendData(value);
-        }
-
-        protected void sendData(byte[] data) {
-            if (mUartService != null) {
-                // Split the value into chunks (UART service has a maximum number of characters that can be written )
-                for (int i = 0; i < data.length; i += kTxMaxCharacters) {
-                    final byte[] chunk = Arrays.copyOfRange(data, i, Math.min(i + kTxMaxCharacters, data.length));
-                    mBleManager.writeService(mUartService, UUID_TX, chunk);
-                }
-            } else {
-                Log.w(TAG, "Uart Service not discovered. Unable to send data");
-            }
-        }
-
-        // Send data to UART and add a byte with a custom CRC
-        protected void sendDataWithCRC(byte[] data) {
-
-            // Calculate checksum
-            byte checksum = 0;
-            for (byte aData : data) {
-                checksum += aData;
-            }
-            checksum = (byte) (~checksum);       // Invert
-
-            // Add crc to data
-            byte dataCrc[] = new byte[data.length + 1];
-            System.arraycopy(data, 0, dataCrc, 0, data.length);
-            dataCrc[data.length] = checksum;
-
-            // Send it
-            Log.d(TAG, "Send to UART: " + BleUtils.bytesToHexWithSpaces(dataCrc));
-            sendData(dataCrc);
-        }
-        // endregion
-
-        // region SendDataWithCompletionHandler
-        protected interface SendDataCompletionHandler {
-            void sendDataResponse(String data);
-        }
-
-        final private Handler sendDataTimeoutHandler = new Handler();
-        private Runnable sendDataRunnable = null;
-        private SendDataCompletionHandler sendDataCompletionHandler = null;
-
-        protected void sendData(byte[] data, SendDataCompletionHandler completionHandler) {
-
-            if (completionHandler == null) {
-                sendData(data);
+            if (status == BluetoothGatt.GATT_FAILURE) {
+                Log.i(TAG, "onConnectionStateChange GATT FAILURE");
+                return;
+            } else if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.i(TAG, "onConnectionStateChange != GATT_SUCCESS");
                 return;
             }
 
-            if (!isRxNotificationEnabled) {
-                Log.w(TAG, "sendData warning: RX notification not enabled. completionHandler will not be executed");
-            }
-
-            if (sendDataRunnable != null || sendDataCompletionHandler != null) {
-                Log.d(TAG, "sendData error: waiting for a previous response");
-                return;
-            }
-
-            Log.d(TAG, "sendData");
-            sendDataCompletionHandler = completionHandler;
-            sendDataRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    Log.d(TAG, "sendData timeout");
-                    final SendDataCompletionHandler dataCompletionHandler = sendDataCompletionHandler;
-
-                    UartInterfaceActivity.this.sendDataRunnable = null;
-                    UartInterfaceActivity.this.sendDataCompletionHandler = null;
-
-                    dataCompletionHandler.sendDataResponse(null);
-                }
-            };
-
-            sendDataTimeoutHandler.postDelayed(sendDataRunnable, 2 * 1000);
-            sendData(data);
-
-        }
-
-        protected boolean isWaitingForSendDataResponse() {
-            return sendDataRunnable != null;
-        }
-
-        // endregion
-
-        // region BleManagerListener  (used to implement sendData with completionHandler)
-
-        @Override
-        public void onConnected() {
-
-        }
-
-        @Override
-        public void onConnecting() {
-
-        }
-
-        @Override
-        public void onDisconnected() {
-
-        }
-
-        @Override
-        public void onServicesDiscovered() {
-            mUartService = mBleManager.getGattService(UUID_SERVICE);
-        }
-
-        protected void enableRxNotifications() {
-            isRxNotificationEnabled = true;
-            mBleManager.enableNotification(mUartService, UUID_RX, true);
-        }
-
-        @Override
-        public void onDataAvailable(BluetoothGattCharacteristic characteristic) {
-            // Check if there is a pending sendDataRunnable
-            if (sendDataRunnable != null) {
-                if (characteristic.getService().getUuid().toString().equalsIgnoreCase(UUID_SERVICE)) {
-                    if (characteristic.getUuid().toString().equalsIgnoreCase(UUID_RX)) {
-
-                        Log.d(TAG, "sendData received data");
-                        sendDataTimeoutHandler.removeCallbacks(sendDataRunnable);
-                        sendDataRunnable = null;
-
-                        if (sendDataCompletionHandler != null) {
-                            final byte[] bytes = characteristic.getValue();
-                            final String data = new String(bytes, Charset.forName("UTF-8"));
-
-                            final SendDataCompletionHandler dataCompletionHandler = sendDataCompletionHandler;
-                            sendDataCompletionHandler = null;
-                            dataCompletionHandler.sendDataResponse(data);
-                        }
-                    }
-                }
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                Log.i(TAG, "onConnectionStateChange CONNECTED");
+                gatt.discoverServices();
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                Log.i(TAG, "onConnectionStateChange DISCONNECTED");
             }
         }
 
         @Override
-        public void onDataAvailable(BluetoothGattDescriptor descriptor) {
+        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+            super.onServicesDiscovered(gatt, status);
+            Log.i(TAG,"onServicesDiscovered");
+            if (status != BluetoothGatt.GATT_SUCCESS) return;
 
+            // Reference your UUIDs
+            characteristicID = gatt.getService(SERVICE_UUID).getCharacteristic(CHARACTERISTIC_UUID_ID);
+            gatt.setCharacteristicNotification(characteristicID,true);
+
+            BluetoothGattDescriptor descriptor = characteristicID.getDescriptor(DESCRIPTOR_UUID_ID);
+            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+            gatt.writeDescriptor(descriptor);
         }
 
         @Override
-        public void onReadRemoteRssi(int rssi) {
-
+        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicRead(gatt, characteristic, status);
+            Log.i(TAG,"onCharacteristicRead");
         }
 
-        // endregion
-    }
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicWrite(gatt, characteristic, status);
+            Log.i(TAG,"onCharacteristicWrite");
+        }
 
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
+            super.onCharacteristicChanged(gatt, characteristic);
+            Log.i(TAG,"onCharacteristicChanged");
+            Log.v("Here", new String(characteristic.getValue()));
+            // Here you can read the characteristc's value
+            // new String(characteristic.getValue();
+        }
 
-    public synchronized void onDataAvailable(BluetoothGattCharacteristic characteristic) {
-        UartInterfaceActivity uart = new UartInterfaceActivity();
-        uart.onDataAvailable(characteristic);
-        // UART RX
-        if (characteristic.getService().getUuid().toString().equalsIgnoreCase("6e400001-b5a3-f393-e0a9-e50e24dcca9e")) {
-            if (characteristic.getUuid().toString().equalsIgnoreCase("6e400003-b5a3-f393-e0a9-e50e24dcca9e")) {
-                final byte[] bytes = characteristic.getValue();
-                mReceivedBytes += bytes.length;
+        @Override
+        public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+            super.onDescriptorRead(gatt, descriptor, status);
+            Log.i(TAG,"onDescriptorRead");
+        }
 
-                final UartDataChunk dataChunk = new UartDataChunk(System.currentTimeMillis(), UartDataChunk.TRANSFERMODE_RX, bytes);
-                mDataBuffer.add(dataChunk);
-
-                final String formattedData = mShowDataInHexFormat ? BleUtils.bytesToHex2(bytes) : BleUtils.bytesToText(bytes, true);
-
-                Log.v("data from uart ", formattedData);
-            }
+        @Override
+        public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+            super.onDescriptorWrite(gatt, descriptor, status);
+            Log.i(TAG,"onDescriptorWrite");
         }
     }
-
 
 
 }
